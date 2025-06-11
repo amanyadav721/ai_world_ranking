@@ -9,8 +9,11 @@ from bs4 import BeautifulSoup
 import time
 import fitz
 import tempfile
+import os
 
 app = FastAPI()
+
+port = int(os.environ.get("PORT", 8000))
 
 class LinksInput(BaseModel):
     links: List[str]
@@ -89,3 +92,7 @@ async def extract_text_from_pdf(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
 
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
