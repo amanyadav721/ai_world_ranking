@@ -5,6 +5,7 @@ from typing import List
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from ai.summary import summarize_text, resume_analysis
+from fastapi.middleware.cors import CORSMiddleware
 from bs4 import BeautifulSoup
 import time
 import fitz
