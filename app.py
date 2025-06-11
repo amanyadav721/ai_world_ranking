@@ -13,6 +13,13 @@ import os
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust to specify allowed origins
+    allow_methods=["POST", "OPTIONS"],  # Allow POST and OPTIONS
+    allow_headers=["Content-Type"],
+)
+
 class LinksInput(BaseModel):
     links: List[str]
 
