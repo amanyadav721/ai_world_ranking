@@ -1,11 +1,14 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException,UploadFile,File
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from ai.summary import summarize_text
+from ai.summary import summarize_text, resume_analysis
 from bs4 import BeautifulSoup
 import time
+import fitz
+import tempfile
 
 app = FastAPI()
 
@@ -61,3 +64,28 @@ def scrape_links(input_data: LinksInput):
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+
+
+@app.post("/extract-text/")
+async def extract_text_from_pdf(file: UploadFile = File(...)):
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
+    try:
+        # Save uploaded file to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+
+        # Extract text from the PDF
+        doc = fitz.open(tmp_path)
+        text = "\n".join(page.get_text("text") for page in doc)
+        resume_analysis_result = resume_analysis({"text": text})
+
+        doc.close()
+
+        return JSONResponse(content={"filename": file.filename, "resume_analysis":resume_analysis_result})
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+
