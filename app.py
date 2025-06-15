@@ -6,12 +6,10 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from ai.summary import summarize_text, resume_analysis
 from ai.QuestionBuilder.questionBuilder import questionBuilderv1, questionAnalyser
 from fastapi.middleware.cors import CORSMiddleware
-from Models.modelsv1 import QuestionData, QuestionAnalyse
+from Models.modelsv1 import QuestionData
 from bs4 import BeautifulSoup
 
 
@@ -27,46 +25,15 @@ app.add_middleware(
 class LinksInput(BaseModel):
     links: List[str]
 
-import undetected_chromedriver as uc
-from webdriver_manager.chrome import ChromeDriverManager
 
-def scrape_with_selenium(url: str) -> str:
-    options = uc.ChromeOptions()
-    options.headless = True
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("user-agent=Mozilla/5.0")
 
-    driver = uc.Chrome(
-        options=options,
-        driver_executable_path=ChromeDriverManager().install()
-    )
-
-    try:
-        driver.get(url)
-        time.sleep(5)  # Replace with WebDriverWait if needed
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        return soup.get_text(separator=' ', strip=True)
-    finally:
-        driver.quit()
 
 
 
 @app.get("/")
-def root():
+async def root():
     return {"message": "Welcome to the AI ASTRA. Use the endpoints to interact with the AI services."}
 
-@app.post("/scrape")
-def scrape_links(input_data: LinksInput):
-    results = []
-    for link in input_data.links:
-        try:
-            text = scrape_with_selenium(link)
-            results.append({"source": link, "content": text})
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error scraping {link}: {str(e)}")
-    return {"ai": summarize_text(results)}
 
 @app.post("/ai/resumeranker")
 async def extract_text_from_pdf(file: UploadFile = File(...), job_title: str = Form(...), job_description: str = Form(...)):
