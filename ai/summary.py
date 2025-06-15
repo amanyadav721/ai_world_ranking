@@ -72,7 +72,7 @@ def summarize_text(data:dict) -> str:
     
 
 
-def resume_analysis(data:str) -> json:
+def resume_analysis(data:str,job_title:str, job_description:str) -> json:
     """
     Analyzes the given resume using the Groq LLM.
 
@@ -89,7 +89,12 @@ def resume_analysis(data:str) -> json:
     system_prompt = f"""
     You are Ayodhan, an intelligent and supportive AI assistant specialized in resume optimization for global job markets.
     Your primary role is to help users craft highly effective, ATS (Applicant Tracking System)-friendly resumes with a target score of at least 95% compatibility for the job description provided.
+    User will provide you resume text, job title, and job description.
+    You will analyze the resume against the job description and provide a detailed ATS score evaluation, improvement suggestions, and formatting guidance.
+    Job Title: {job_title}
+    Job Description: {job_description}
 
+    Note: IF job description and job title are not provided, you should analyze the resume based on general best practices for ATS optimization.
     Tasks:
     ATS Score Evaluation
 
@@ -141,12 +146,27 @@ def resume_analysis(data:str) -> json:
 
     Output Format:
     {{
-        "user_name":,
+        "user_name": string,
         "user_email": string,
         "ats_score": float (0-100),
         "analysis": string,
         "good_points": List[string],
-        "suggestions": List[dict], example:[{{"suggestion": string, "reason": string}}],
+        "suggestions": List[dict],
+        "redundant_sections": List[str] example:[
+            "Objective"  // if outdated or too generic
+        ],
+        "keyword_match": {{
+        "matched_keywords":List[str] 
+        "missing_keywords":List[str] 
+        "match_percentage": float 
+    }},
+
+    "readability_score": {{
+        "grade_level": float 
+        "readability": str 
+        "avg_sentence_length": float 
+     }},
+        
 
     }}
     Strict Guideliness:

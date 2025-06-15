@@ -1,0 +1,36 @@
+missing_sections	Highlights areas that are often overlooked but important
+redundant_sections	Identifies sections that could be removed to reduce noise
+keyword_match	Helps user tailor resume to job descriptions
+readability_score	Ensures hiring managers can quickly scan content
+formatting_feedback	Flags minor visual issues (important for ATS and UX)
+summary_quality	Boosts first impressions by improving career summary
+linkedin_score	Encourages stronger online presence
+word_count & file_size	Help keep the resume compact and ATS-readable
+job_title_detected	Auto-detects intent or role focus
+overall_impression	Gives a quick qualitative view from AI
+
+
+
+Input: 
+            Backend     Frontend    DSA     DBMS    OS  NETWORKING
+Difficulty  Easy        Easy        Easy    Easy
+Tags/Topic                          Dp
+
+Ques: Number: 2
+Qustion Id: 45dv4rrr3er2 
+Expected Time to Complete : Time
+ -> Solution (Efficiency )
+
+
+JSON 
+type: Backend
+Difficulty: Easy 
+Topic: (Related to type)
+Question: 2
+
+Response
+QuestionID
+expected Time
+Question
+solution 
+
