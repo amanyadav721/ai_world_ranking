@@ -50,10 +50,11 @@ async def extract_text_from_pdf(file: UploadFile = File(...), job_title: str = F
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
-
+        print("job_title:", job_title, "job_description:", job_description)
         doc = fitz.open(tmp_path)
         text = "\n".join(page.get_text("text") for page in doc)
-        result = result = resume_analysis(text, job_title, job_description)
+        result = resume_analysis(text, job_title, job_description)
+        print("Result:", result)
         doc.close()
         return JSONResponse(content={"filename": file.filename, "resume_analysis": result})
     except Exception as e:
