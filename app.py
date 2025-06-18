@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import List
 from ai.summary import summarize_text, resume_analysis
 from ai.QuestionBuilder.questionBuilder import questionBuilderv1, questionAnalyser
+from ai.LLDai.lld_ai import lld_creator
 from fastapi.middleware.cors import CORSMiddleware
 from Models.modelsv1 import QuestionData
 from bs4 import BeautifulSoup
@@ -77,7 +78,29 @@ def scrape_links(qd:QuestionData):
             return questionBuilderv1(question_data)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error processing question data: {str(e)}")
+        
+
+@app.post("/ai/lld")
+def lld_ai(qd:dict):
+    
+        try:
+            return lld_creator(qd)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error processing question data: {str(e)}")
    
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 import tempfile
