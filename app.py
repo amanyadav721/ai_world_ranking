@@ -44,28 +44,56 @@ async def root():
 
 
 @app.post("/ai/resumeranker")
-async def extract_text_from_pdf(file: UploadFile = File(...), job_title: str = Form(...), job_description: str = Form(...)):
-    if not file.filename.endswith(".pdf"):
+async def extract_text_from_pdf(
+    file: UploadFile = File(...),
+    job_title: str = Form(...),
+    job_description: str = Form(...)
+):
+    if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+
     try:
+        # Save uploaded file to a temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
-        print("job_title:", job_title, "job_description:", job_description)
 
+        print("job_title:", job_title)
+        print("job_description:", job_description)
+
+        # Try opening and reading the PDF
         try:
             doc = fitz.open(tmp_path)
-            text = "\n".join(page.get_text("text") for page in doc)
-            print(text)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error reading PDF file: {str(e)}")
-        
-        result = resume_analysis(text, job_title, job_description)
-        print("Result:", result)
-        doc.close()
+            raise HTTPException(status_code=500, detail=f"Error opening PDF file: {str(e)}")
+
+        try:
+            text = "\n".join(page.get_text("text") for page in doc)
+            doc.close()
+        except Exception as e:
+            doc.close()
+            raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
+
+        # Check if text was extracted
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="PDF contains no extractable text.")
+
+        print("Extracted text:", text[:500])  # Print first 500 chars for sanity check
+
+        # Run resume analysis
+        try:
+            result = resume_analysis(text, job_title, job_description)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Resume analysis failed: {str(e)}")
+
         return JSONResponse(content={"filename": file.filename, "resume_analysis": result})
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+
+    finally:
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.remove(tmp_path)
     
 
 
