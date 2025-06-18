@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List
-from ai.summary import summarize_text, resume_analysis
+from ai.summary import  resume_analysis
 from ai.QuestionBuilder.questionBuilder import questionBuilderv1, questionAnalyser
 from ai.LLDai.lld_ai import lld_creator
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,18 +53,22 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text)  # collapse whitespace
     return text.strip()
 
-def safe_parse_json(json_string: str):
+from typing import Any
+def sanitize_and_parse_json(raw: str) -> Any:
+    """
+    Cleans and parses a possibly malformed JSON string from an LLM.
+    """
     try:
-        return json.loads(json_string)
+        # Remove code block markers and invalid control characters
+        raw = raw.strip()
+        raw = re.sub(r"```(?:json)?", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"[\x00-\x1F\x7F]", "", raw)  # control chars
+        raw = raw.replace("\n", "\\n").replace("\r", "")  # escape newlines
+
+        return json.loads(raw)
     except json.JSONDecodeError as e:
-        # Clean up invalid characters and try again
-        print("Trying to sanitize invalid JSON...")
-        cleaned = re.sub(r'[\x00-\x1F\x7F]', '', json_string)  # remove control chars
-        try:
-            return json.loads(cleaned)
-        except Exception as inner_e:
-            print("Still invalid after cleaning:\n", cleaned[:1000])
-            raise inner_e
+        print("❌ JSON Decode Failed. Raw content:\n", raw[:1000])
+        raise ValueError(f"resume_analysis failed: {e}")
 
 @app.post("/ai/resumeranker")
 async def extract_text_from_pdf(
@@ -100,7 +104,7 @@ async def extract_text_from_pdf(
 
         try:
             
-            return ai_msg
+            return {"filename": file.filename, "resume_analysis": ai_msg}
         except Exception as e:
             raise ValueError(f"resume_analysis failed: {str(e)}")
 
