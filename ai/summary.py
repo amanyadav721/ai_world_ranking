@@ -40,6 +40,7 @@ def resume_analysis(data, job_title: str, job_description: str) -> dict:
     Job Description: {job_description}
 
     Note: IF job description and job title are not provided, you should analyze the resume based on general best practices for ATS optimization.
+    ATS score needs to be between 0 and 100, this very crucial data point make sure you make it accurate.
 
     Output Format:
     {{
