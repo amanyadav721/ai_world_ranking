@@ -52,8 +52,14 @@ async def extract_text_from_pdf(file: UploadFile = File(...), job_title: str = F
             tmp.write(await file.read())
             tmp_path = tmp.name
         print("job_title:", job_title, "job_description:", job_description)
-        doc = fitz.open(tmp_path)
-        text = "\n".join(page.get_text("text") for page in doc)
+
+        try:
+            doc = fitz.open(tmp_path)
+            text = "\n".join(page.get_text("text") for page in doc)
+            print(text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error reading PDF file: {str(e)}")
+        
         result = resume_analysis(text, job_title, job_description)
         print("Result:", result)
         doc.close()
