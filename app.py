@@ -5,6 +5,7 @@ import tempfile
 import os
 import re
 import unicodedata
+import json
 from git import Repo
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
@@ -52,6 +53,19 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text)  # collapse whitespace
     return text.strip()
 
+def safe_parse_json(json_string: str):
+    try:
+        return json.loads(json_string)
+    except json.JSONDecodeError as e:
+        # Clean up invalid characters and try again
+        print("Trying to sanitize invalid JSON...")
+        cleaned = re.sub(r'[\x00-\x1F\x7F]', '', json_string)  # remove control chars
+        try:
+            return json.loads(cleaned)
+        except Exception as inner_e:
+            print("Still invalid after cleaning:\n", cleaned[:1000])
+            raise inner_e
+
 @app.post("/ai/resumeranker")
 async def extract_text_from_pdf(
     file: UploadFile = File(...),
@@ -82,14 +96,14 @@ async def extract_text_from_pdf(
         clean_resume_text = clean_text(text)
         print("Sanitized text preview:", clean_resume_text[:3000])
 
-        try:
-            result = resume_analysis(clean_resume_text, job_title, job_description)
-        except Exception as e:
-            import traceback
-            print("Resume analysis failed:", traceback.format_exc())
-            raise HTTPException(status_code=500, detail=f"Resume analysis failed: {str(e)}")
+        ai_msg = resume_analysis(clean_resume_text, job_title, job_description)
 
-        return JSONResponse(content={"filename": file.filename, "resume_analysis": result})
+        try:
+            
+            return ai_msg
+        except Exception as e:
+            raise ValueError(f"resume_analysis failed: {str(e)}")
+
 
     finally:
         if 'tmp_path' in locals() and os.path.exists(tmp_path):
