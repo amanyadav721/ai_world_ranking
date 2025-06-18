@@ -84,11 +84,7 @@ async def extract_text_from_pdf(
             tmp.write(await file.read())
             tmp_path = tmp.name
 
-        print("job_title:", job_title)
-        print("job_description:", job_description)
-
         try:
-            # Extract text using pdfminer
             text = extract_text(tmp_path)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
@@ -96,18 +92,17 @@ async def extract_text_from_pdf(
         if not text.strip():
             raise HTTPException(status_code=400, detail="PDF contains no extractable text.")
 
-        # Clean and normalize
         clean_resume_text = clean_text(text)
-        print("Sanitized text preview:", clean_resume_text[:3000])
-
-        ai_msg = resume_analysis(clean_resume_text, job_title, job_description)
 
         try:
-            
-            return {"filename": file.filename, "resume_analysis": ai_msg}
-        except Exception as e:
-            raise ValueError(f"resume_analysis failed: {str(e)}")
+            analysis_result = resume_analysis(clean_resume_text, job_title, job_description)
+        except ValueError as e:
+            raise HTTPException(status_code=500, detail=f"AI model JSON parsing failed: {str(e)}")
 
+        return {
+            "filename": file.filename,
+            "resume_analysis": analysis_result
+        }
 
     finally:
         if 'tmp_path' in locals() and os.path.exists(tmp_path):
