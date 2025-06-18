@@ -3,6 +3,8 @@ import time
 import fitz
 import tempfile
 import os
+import re
+import unicodedata
 from git import Repo
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import JSONResponse
@@ -43,6 +45,13 @@ async def root():
     return {"message": "Welcome to the AI ASTRA. Use the endpoints to interact with the AI services."}
 
 
+def clean_text(text: str) -> str:
+    # Normalize unicode, remove control characters and junk
+    text = unicodedata.normalize("NFKD", text)
+    text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # remove non-ASCII chars
+    text = re.sub(r'\s+', ' ', text)  # collapse whitespace
+    return text.strip()
+
 @app.post("/ai/resumeranker")
 async def extract_text_from_pdf(
     file: UploadFile = File(...),
@@ -53,7 +62,7 @@ async def extract_text_from_pdf(
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
     try:
-        # Save uploaded file to a temporary file
+        # Save uploaded file to a temp path
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
@@ -61,28 +70,22 @@ async def extract_text_from_pdf(
         print("job_title:", job_title)
         print("job_description:", job_description)
 
-        # Try opening and reading the PDF
         try:
             doc = fitz.open(tmp_path)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error opening PDF file: {str(e)}")
-
-        try:
             text = "\n".join(page.get_text("text") for page in doc)
             doc.close()
         except Exception as e:
-            doc.close()
             raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
 
-        # Check if text was extracted
         if not text.strip():
             raise HTTPException(status_code=400, detail="PDF contains no extractable text.")
 
-        print("Extracted text:", text[:500])  # Print first 500 chars for sanity check
+        # Sanitize text before analysis
+        clean_resume_text = clean_text(text)
+        print("Sanitized text preview:", clean_resume_text[:500])
 
-        # Run resume analysis
         try:
-            result = resume_analysis(text, job_title, job_description)
+            result = resume_analysis(clean_resume_text, job_title, job_description)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Resume analysis failed: {str(e)}")
 
