@@ -72,7 +72,7 @@ def summarize_text(data:dict) -> str:
     
 
 
-def resume_analysis(data:str,job_title:str, job_description:str) -> json:
+def resume_analysis(data,job_title:str, job_description:str) -> json:
     """
     Analyzes the given resume using the Groq LLM.
 

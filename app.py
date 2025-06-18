@@ -18,6 +18,7 @@ from Models.modelsv1 import QuestionData
 from bs4 import BeautifulSoup
 from ai.githubai.github_handler import clone_repo, extract_code_from_repo
 from ai.githubai.doc_generator import generate_doc_from_code
+from pdfminer.high_level import extract_text
 
 
 
@@ -46,7 +47,6 @@ async def root():
 
 
 def clean_text(text: str) -> str:
-    # Normalize unicode, remove control characters and junk
     text = unicodedata.normalize("NFKD", text)
     text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # remove non-ASCII chars
     text = re.sub(r'\s+', ' ', text)  # collapse whitespace
@@ -62,7 +62,6 @@ async def extract_text_from_pdf(
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
     try:
-        # Save uploaded file to a temp path
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
@@ -71,33 +70,30 @@ async def extract_text_from_pdf(
         print("job_description:", job_description)
 
         try:
-            doc = fitz.open(tmp_path)
-            text = "\n".join(page.get_text("text") for page in doc)
-            doc.close()
+            # Extract text using pdfminer
+            text = extract_text(tmp_path)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
 
         if not text.strip():
             raise HTTPException(status_code=400, detail="PDF contains no extractable text.")
 
-        # Sanitize text before analysis
+        # Clean and normalize
         clean_resume_text = clean_text(text)
-        print("Sanitized text preview:", clean_resume_text[:500])
+        print("Sanitized text preview:", clean_resume_text[:3000])
 
         try:
             result = resume_analysis(clean_resume_text, job_title, job_description)
         except Exception as e:
+            import traceback
+            print("Resume analysis failed:", traceback.format_exc())
             raise HTTPException(status_code=500, detail=f"Resume analysis failed: {str(e)}")
 
         return JSONResponse(content={"filename": file.filename, "resume_analysis": result})
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
-
     finally:
         if 'tmp_path' in locals() and os.path.exists(tmp_path):
             os.remove(tmp_path)
-    
 
 
 
