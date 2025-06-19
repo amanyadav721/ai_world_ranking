@@ -34,3 +34,13 @@ expected Time
 Question
 solution 
 
+
+
+Tools
+
+- Github doc creator
+- Resume analyzer
+- LLD creator
+- Problem Practice creator
+
+Future Developments
