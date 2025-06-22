@@ -190,6 +190,7 @@ cython_debug/
 /tt
 /ai/centralAI
 details.txt
+faiss_indices/
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data

@@ -14,3 +14,16 @@ class QuestionAnalyse(BaseModel):
     questions: List[Dict] = Field(..., description="A list of generated questions with their answers")
     time_taken: Optional[float] = Field(None, description="Time taken to generate the questions in seconds")
     user_solution: Optional[str] = Field(None, description="User's solution to the question")
+
+
+# --- Pydantic Models ---
+class ChatRequest(BaseModel):
+    user_email: str
+    query: str
+
+class UploadResponse(BaseModel):
+    status: str
+    message: str
+
+class ChatResponse(BaseModel):
+    answer: str

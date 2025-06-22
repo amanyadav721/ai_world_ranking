@@ -1,29 +1,39 @@
-import shutil
-import time
-import fitz
-import tempfile
+import json
 import os
 import re
+import shutil
+import tempfile
+import time
 import unicodedata
-import json
-from git import Repo
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+import uuid
 from typing import List
-from ai.summary import  resume_analysis
-from ai.QuestionBuilder.questionBuilder import questionBuilderv1, questionAnalyser
-from ai.LLDai.lld_ai import lld_creator
-from fastapi.middleware.cors import CORSMiddleware
-from Models.modelsv1 import QuestionData
+
+import fitz
 from bs4 import BeautifulSoup
-from ai.githubai.github_handler import clone_repo, extract_code_from_repo
-from ai.githubai.doc_generator import generate_doc_from_code
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from git import Repo
+from langchain.chains import ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
+from langchain_community.vectorstores import FAISS
 # from ai.centralAI.agents import smartAgentOnboardingStreaming
 # from fastapi.responses import StreamingResponse
 from pdfminer.high_level import extract_text
+from pydantic import BaseModel
 
-
+from ai.chatwithPDF.chat_pdf import (embedding_model, get_chat_model,
+                                     get_hashed_email_path,
+                                     load_or_create_vector_store,
+                                     user_data_cache)
+from ai.githubai.doc_generator import generate_doc_from_code
+from ai.githubai.github_handler import clone_repo, extract_code_from_repo
+from ai.LLDai.lld_ai import lld_creator
+from ai.QuestionBuilder.questionBuilder import (questionAnalyser,
+                                                questionBuilderv1)
+from ai.summary import resume_analysis
+from Models.modelsv1 import (ChatRequest, ChatResponse, QuestionData,
+                             UploadResponse)
 
 app = FastAPI()
 
@@ -40,14 +50,12 @@ class LinksInput(BaseModel):
     links: List[str]
 
 
-
-
-
-
-
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the AI ASTRA. Use the endpoints to interact with the AI services."}
+    return {
+        "message": "Welcome to the AI ASTRA. Use the endpoints to interact with the AI services."
+    }
+
 
 # class QuestionRequest(BaseModel):
 #     user: str
@@ -63,11 +71,14 @@ async def root():
 
 def clean_text(text: str) -> str:
     text = unicodedata.normalize("NFKD", text)
-    text = re.sub(r'[^\x00-\x7F]+', ' ', text)  # remove non-ASCII chars
-    text = re.sub(r'\s+', ' ', text)  # collapse whitespace
+    text = re.sub(r"[^\x00-\x7F]+", " ", text)  # remove non-ASCII chars
+    text = re.sub(r"\s+", " ", text)  # collapse whitespace
     return text.strip()
 
+
 from typing import Any
+
+
 def sanitize_and_parse_json(raw: str) -> Any:
     """
     Cleans and parses a possibly malformed JSON string from an LLM.
@@ -84,11 +95,12 @@ def sanitize_and_parse_json(raw: str) -> Any:
         print("❌ JSON Decode Failed. Raw content:\n", raw[:1000])
         raise ValueError(f"resume_analysis failed: {e}")
 
+
 @app.post("/ai/resumeranker")
 async def extract_text_from_pdf(
     file: UploadFile = File(...),
     job_title: str = Form(...),
-    job_description: str = Form(...)
+    job_description: str = Form(...),
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -101,52 +113,61 @@ async def extract_text_from_pdf(
         try:
             text = extract_text(tmp_path)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error extracting text from PDF: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error extracting text from PDF: {str(e)}"
+            )
 
         if not text.strip():
-            raise HTTPException(status_code=400, detail="PDF contains no extractable text.")
+            raise HTTPException(
+                status_code=400, detail="PDF contains no extractable text."
+            )
 
         clean_resume_text = clean_text(text)
 
         try:
-            analysis_result = resume_analysis(clean_resume_text, job_title, job_description)
+            analysis_result = resume_analysis(
+                clean_resume_text, job_title, job_description
+            )
         except ValueError as e:
-            raise HTTPException(status_code=500, detail=f"AI model JSON parsing failed: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"AI model JSON parsing failed: {str(e)}"
+            )
 
-        return {
-            "filename": file.filename,
-            "resume_analysis": analysis_result
-        }
+        return {"filename": file.filename, "resume_analysis": analysis_result}
 
     finally:
-        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+        if "tmp_path" in locals() and os.path.exists(tmp_path):
             os.remove(tmp_path)
 
 
-
 @app.post("/ai/questionBuilder")
-def scrape_links(qd:QuestionData):
-    
-        try:
-            question_data = {
-                "practice_type": qd.practice_type,
-                "difficulty": qd.difficulty,
-                "topic": qd.topic,
-                "question_type": qd.question_type,
-                "number_of_questions": qd.number_of_questions
-            }
-            return questionBuilderv1(question_data)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error processing question data: {str(e)}")
-        
+def scrape_links(qd: QuestionData):
+
+    try:
+        question_data = {
+            "practice_type": qd.practice_type,
+            "difficulty": qd.difficulty,
+            "topic": qd.topic,
+            "question_type": qd.question_type,
+            "number_of_questions": qd.number_of_questions,
+        }
+        return questionBuilderv1(question_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error processing question data: {str(e)}"
+        )
+
 
 @app.post("/ai/lld")
-def lld_ai(qd:dict):
-    
-        try:
-            return lld_creator(qd)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error processing question data: {str(e)}")
+def lld_ai(qd: dict):
+
+    try:
+        return lld_creator(qd)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error processing question data: {str(e)}"
+        )
+
 
 import tempfile
 from contextlib import contextmanager
@@ -170,10 +191,12 @@ def clone_repo_to_temp(repo_url: str):
         # This 'finally' block ensures cleanup happens even if errors occur
         print(f"Cleaning up temporary directory: {temp_dir}")
         shutil.rmtree(temp_dir, ignore_errors=True)
-        
+
 
 @app.post("/generate-doc/")
-def generate_documentation(repo_url: str = Query(..., description="Public GitHub repository URL")):
+def generate_documentation(
+    repo_url: str = Query(..., description="Public GitHub repository URL")
+):
     """
     Main endpoint to clone a repo, extract code, and generate documentation.
     """
@@ -181,39 +204,166 @@ def generate_documentation(repo_url: str = Query(..., description="Public GitHub
         with clone_repo_to_temp(repo_url) as repo_path:
             code = extract_code_from_repo(repo_path)
             if not code:
-                raise HTTPException(status_code=404, detail="No supported code files found in the repository.")
-            
+                raise HTTPException(
+                    status_code=404,
+                    detail="No supported code files found in the repository.",
+                )
+
             documentation = generate_doc_from_code(code)
             return {"documentation": documentation}
-            
+
     except ConnectionError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
 
 
+# -----------------------Chat with PDF----------------------------#
+@app.post("/upload-pdf/", response_model=UploadResponse)
+async def upload_pdf(
+    user_email: str = Form(..., description="The email of the user."),
+    file: UploadFile = File(..., description="The PDF file to process."),
+):
+    """
+    Handles PDF upload, processing, and vector store creation for a specific user.
+    If a PDF was previously uploaded for this email, it will be replaced.
+    """
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(
+            status_code=400, detail="Invalid file type. Please upload a PDF."
+        )
+
+    user_email_hash_path = get_hashed_email_path(user_email)
+    temp_pdf_path = f"temp_{os.path.basename(user_email_hash_path)}.pdf"
+
+    try:
+        with open(temp_pdf_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        vector_store = load_or_create_vector_store(temp_pdf_path, user_email_hash_path)
+
+        # Initialize or reset the ConversationBufferMemory for this user
+        user_memory = ConversationBufferMemory(
+            memory_key="chat_history", return_messages=True
+        )
+
+        user_data_cache[user_email] = {
+            "vector_store": vector_store,
+            "memory": user_memory,  # Store the memory object
+            "faiss_path": user_email_hash_path,
+        }
+
+        return {
+            "status": "success",
+            "message": f"PDF '{file.filename}' uploaded and processed for {user_email}.",
+            "user_email": user_email,
+        }
+    except Exception as e:
+        if os.path.exists(temp_pdf_path):
+            os.remove(temp_pdf_path)
+        raise HTTPException(status_code=500, detail=f"Failed to process PDF: {str(e)}")
+    finally:
+        if os.path.exists(temp_pdf_path):
+            os.remove(temp_pdf_path)
+        await file.close()
 
 
+@app.post("/chat/", response_model=ChatResponse)
+async def chat_with_pdf(request: ChatRequest):
+    """
+    Handles the chat conversation for a specific user.
+    """
+    user_email = request.user_email
+    user_email_hash_path = get_hashed_email_path(user_email)
+
+    # Check if the user's data is in cache, if not, try to load from disk
+    if user_email not in user_data_cache:
+        if os.path.exists(user_email_hash_path) and os.path.isdir(user_email_hash_path):
+            try:
+                print(
+                    f"Loading vector store from disk for {user_email} (not in cache)..."
+                )
+                vector_store = FAISS.load_local(
+                    user_email_hash_path,
+                    embedding_model,
+                    allow_dangerous_deserialization=True,
+                )
+                # When loading from disk, we also need to re-initialize the memory if it's not persisted
+                # In this example, memory is NOT persisted, so it starts fresh.
+                user_memory = ConversationBufferMemory(
+                    memory_key="chat_history", return_messages=True
+                )
+
+                user_data_cache[user_email] = {
+                    "vector_store": vector_store,
+                    "memory": user_memory,  # Initialize new memory object
+                }
+                print("Vector store loaded into cache.")
+            except Exception as e:
+                print(f"Failed to load vector store from disk for {user_email}: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail="No processed PDF found or could not load for this user. Please upload a PDF first.",
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="No PDF processed for this user. Please upload a PDF first via the /upload-pdf/ endpoint.",
+            )
+
+    session_data = user_data_cache[user_email]
+    current_vector_store = session_data["vector_store"]
+    current_memory = session_data["memory"]  # Get the stored memory object
+
+    try:
+        # Create a conversational chain, passing the SAME memory object
+        conversation_chain = ConversationalRetrievalChain.from_llm(
+            llm=get_chat_model(),
+            retriever=current_vector_store.as_retriever(),
+            memory=current_memory,  # <<< THIS IS THE CRUCIAL CHANGE
+        )
+
+        # Get the answer from the chain
+        # You no longer pass chat_history directly to the chain's __call__
+        # The memory object inside the chain handles it automatically.
+        result = conversation_chain({"question": request.query})
+        answer = result["answer"]
+
+        # The memory object is automatically updated by the chain; no manual append needed here.
+
+        return {"answer": answer}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during chat: {str(e)}")
 
 
+@app.on_event("shutdown")
+def shutdown_event():
+    """Clean up all temporary files on server shutdown."""
+    print("Server shutting down. Cleaning up temporary files.")
+    # In this version, FAISS indices are persisted in FAISS_STORAGE_DIR.
+    # We only clean up the temporary PDF files if any remain.
+    # For a full cleanup (e.g., development reset), you might remove FAISS_STORAGE_DIR manually.
+    for filename in os.listdir("."):
+        if filename.startswith("temp_") and filename.endswith(".pdf"):
+            os.remove(filename)
+    print("Temporary PDF files cleaned up.")
 
 
-
-
-
-#-----------------------Free Services----------------------------#
+# -----------------------Free Services----------------------------#
 import shutil
 import tempfile
 import zipfile
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, status,BackgroundTasks
-from fastapi.responses import HTMLResponse
-from fastapi.responses import FileResponse, StreamingResponse
-from PIL import Image, ImageDraw, ImageFont
 import PyPDF2
 import pypdfium2 as pdfium
+from fastapi import (BackgroundTasks, FastAPI, File, HTTPException, UploadFile,
+                     status)
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from PIL import Image, ImageDraw, ImageFont
 
 
 def get_temp_paths(suffix: str) -> tuple[str, str]:
@@ -221,6 +371,7 @@ def get_temp_paths(suffix: str) -> tuple[str, str]:
     temp_dir = tempfile.mkdtemp()
     temp_file = os.path.join(temp_dir, f"output{suffix}")
     return temp_file, temp_dir
+
 
 def cleanup_temp_dir(temp_dir_path: str):
     """Removes the temporary directory."""
@@ -231,8 +382,11 @@ def cleanup_temp_dir(temp_dir_path: str):
 
 # --- API Endpoints ---
 
+
 @app.post("/pdf/minimize", summary="Minimize PDF Size")
-async def minimize_pdf(background_tasks: BackgroundTasks, file: UploadFile = File(...)): # Add background_tasks as a dependency
+async def minimize_pdf(
+    background_tasks: BackgroundTasks, file: UploadFile = File(...)
+):  # Add background_tasks as a dependency
     """
     Minimizes the size of an uploaded PDF file.
     Note: PyPDF2's minimization is basic (re-saving with some compression).
@@ -287,10 +441,10 @@ async def minimize_pdf(background_tasks: BackgroundTasks, file: UploadFile = Fil
 
 @app.post("/image/optimize", summary="Optimize Image Size and Format")
 async def optimize_image(
-    background_tasks: BackgroundTasks, # Add background_tasks
+    background_tasks: BackgroundTasks,  # Add background_tasks
     file: UploadFile = File(...),
-    quality: int = 80, # For JPEG/WEBP, 0-100 scale
-    output_format: Optional[str] = None, # e.g., "JPEG", "PNG", "WEBP"
+    quality: int = 80,  # For JPEG/WEBP, 0-100 scale
+    output_format: Optional[str] = None,  # e.g., "JPEG", "PNG", "WEBP"
 ):
     """
     Optimizes an uploaded image by adjusting quality and/or changing its format.
@@ -314,9 +468,11 @@ async def optimize_image(
     else:
         # Use original format if not specified
         suffix = os.path.splitext(file.filename)[1]
-        if not suffix: # Fallback if no extension
-            suffix = ".jpg" # Default to jpg if no extension found
-        output_format = file.content_type.split('/')[-1].upper() # Try to infer from content type
+        if not suffix:  # Fallback if no extension
+            suffix = ".jpg"  # Default to jpg if no extension found
+        output_format = file.content_type.split("/")[
+            -1
+        ].upper()  # Try to infer from content type
 
     temp_output_path, temp_output_dir = get_temp_paths(suffix=suffix)
 
@@ -326,13 +482,15 @@ async def optimize_image(
         # Convert to RGB if saving as JPEG (Pillow requirement)
         if output_format == "JPEG" and image.mode in ("RGBA", "P"):
             image = image.convert("RGB")
-        elif output_format == "PNG" and image.mode == "P": # Ensure PNG handles transparency properly
+        elif (
+            output_format == "PNG" and image.mode == "P"
+        ):  # Ensure PNG handles transparency properly
             image = image.convert("RGBA")
 
         # Save with optimization settings
         save_params = {"quality": quality} if output_format in ["JPEG", "WEBP"] else {}
         if output_format == "PNG":
-            save_params["optimize"] = True # PNG specific optimization
+            save_params["optimize"] = True  # PNG specific optimization
 
         image.save(temp_output_path, format=output_format, **save_params)
 
@@ -352,7 +510,9 @@ async def optimize_image(
 
 
 @app.post("/image/to-pdf", summary="Convert Images to PDF")
-async def images_to_pdf(background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)): # Add background_tasks
+async def images_to_pdf(
+    background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)
+):  # Add background_tasks
     """
     Converts one or more uploaded image files into a single PDF document.
     """
@@ -397,8 +557,8 @@ async def images_to_pdf(background_tasks: BackgroundTasks, files: List[UploadFil
             temp_output_path,
             save_all=True,
             append_images=images[1:] if len(images) > 1 else None,
-            resolution=100.0, # DPI for the PDF
-            quality=95 # Quality for images inside the PDF
+            resolution=100.0,  # DPI for the PDF
+            quality=95,  # Quality for images inside the PDF
         )
 
         background_tasks.add_task(cleanup_temp_dir, temp_output_dir)
@@ -417,7 +577,9 @@ async def images_to_pdf(background_tasks: BackgroundTasks, files: List[UploadFil
 
 
 @app.post("/pdf/to-images", summary="Convert PDF to Images (per page)")
-async def pdf_to_images(background_tasks: BackgroundTasks, file: UploadFile = File(...)): # Add background_tasks
+async def pdf_to_images(
+    background_tasks: BackgroundTasks, file: UploadFile = File(...)
+):  # Add background_tasks
     """
     Converts each page of an uploaded PDF file into separate image files (PNG)
     and returns them in a ZIP archive.
@@ -430,7 +592,7 @@ async def pdf_to_images(background_tasks: BackgroundTasks, file: UploadFile = Fi
 
     temp_input_path, temp_input_dir = get_temp_paths(suffix=".pdf")
     temp_zip_path, temp_zip_dir = get_temp_paths(suffix=".zip")
-    temp_images_dir = tempfile.mkdtemp() # Directory to store individual images
+    temp_images_dir = tempfile.mkdtemp()  # Directory to store individual images
 
     try:
         # Save the uploaded file to a temporary location
@@ -444,7 +606,7 @@ async def pdf_to_images(background_tasks: BackgroundTasks, file: UploadFile = Fi
             page = doc[i]
             # Render page to a Pillow image
             pil_image = page.render_to_image(
-                scale=2 # Render at 2x resolution for better quality
+                scale=2  # Render at 2x resolution for better quality
             )
             image_filename = f"page_{i+1}.png"
             image_path = os.path.join(temp_images_dir, image_filename)
@@ -460,7 +622,9 @@ async def pdf_to_images(background_tasks: BackgroundTasks, file: UploadFile = Fi
         # Add cleanup tasks
         background_tasks.add_task(cleanup_temp_dir, temp_zip_dir)
         background_tasks.add_task(cleanup_temp_dir, temp_input_dir)
-        background_tasks.add_task(cleanup_temp_dir, temp_images_dir) # Clean up the images directory
+        background_tasks.add_task(
+            cleanup_temp_dir, temp_images_dir
+        )  # Clean up the images directory
 
         return FileResponse(
             path=temp_zip_path,
@@ -468,10 +632,10 @@ async def pdf_to_images(background_tasks: BackgroundTasks, file: UploadFile = Fi
             media_type="application/zip",
         )
     except Exception as e:
-        print(f"Error converting PDF to images: {e}") # Debugging
+        print(f"Error converting PDF to images: {e}")  # Debugging
         cleanup_temp_dir(temp_input_dir)
         cleanup_temp_dir(temp_zip_dir)
-        if os.path.exists(temp_images_dir): # Ensure cleanup even if zip not created
+        if os.path.exists(temp_images_dir):  # Ensure cleanup even if zip not created
             shutil.rmtree(temp_images_dir)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -481,10 +645,10 @@ async def pdf_to_images(background_tasks: BackgroundTasks, file: UploadFile = Fi
 
 @app.post("/image/watermark", summary="Add Text Watermark to Image")
 async def watermark_image(
-    background_tasks: BackgroundTasks, # Add background_tasks
+    background_tasks: BackgroundTasks,  # Add background_tasks
     file: UploadFile = File(...),
     watermark_text: str = "CONFIDENTIAL",
-    opacity: int = 128, # 0-255, where 255 is fully opaque
+    opacity: int = 128,  # 0-255, where 255 is fully opaque
     font_size: int = 50,
 ):
     """
@@ -507,11 +671,15 @@ async def watermark_image(
             detail="Font size must be greater than 0.",
         )
 
-    temp_output_path, temp_output_dir = get_temp_paths(suffix=os.path.splitext(file.filename)[1])
+    temp_output_path, temp_output_dir = get_temp_paths(
+        suffix=os.path.splitext(file.filename)[1]
+    )
 
     try:
         # Open the image
-        img = Image.open(BytesIO(await file.read())).convert("RGBA") # Convert to RGBA for alpha channel handling
+        img = Image.open(BytesIO(await file.read())).convert(
+            "RGBA"
+        )  # Convert to RGBA for alpha channel handling
 
         # Create a drawing object
         draw = ImageDraw.Draw(img)
@@ -522,10 +690,16 @@ async def watermark_image(
             font = ImageFont.truetype("arial.ttf", font_size)
         except IOError:
             try:
-                font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size) # Common on many Linux systems
+                font = ImageFont.truetype(
+                    "DejaVuSans-Bold.ttf", font_size
+                )  # Common on many Linux systems
             except IOError:
-                font = ImageFont.load_default() # Fallback to default if no TrueType font found
-                print("Warning: Could not find Arial.ttf or DejaVuSans-Bold.ttf. Using default font.")
+                font = (
+                    ImageFont.load_default()
+                )  # Fallback to default if no TrueType font found
+                print(
+                    "Warning: Could not find Arial.ttf or DejaVuSans-Bold.ttf. Using default font."
+                )
 
         # Calculate text size and position
         # Use getbbox for more accurate text size
@@ -541,7 +715,7 @@ async def watermark_image(
         draw_watermark = ImageDraw.Draw(watermark_layer)
 
         # Draw the text with desired color (e.g., light grey) and opacity
-        text_color = (192, 192, 192, opacity) # RGBA: light grey with given opacity
+        text_color = (192, 192, 192, opacity)  # RGBA: light grey with given opacity
         draw_watermark.text((x, y), watermark_text, font=font, fill=text_color)
 
         # Composite the watermark layer onto the original image
@@ -549,7 +723,7 @@ async def watermark_image(
 
         # Save the watermarked image, using the original format if possible
         # Or convert to RGB if the output format doesn't support transparency (e.g., JPEG)
-        original_format = file.content_type.split('/')[-1].upper()
+        original_format = file.content_type.split("/")[-1].upper()
         if original_format == "JPEG":
             watermarked_img = watermarked_img.convert("RGB")
             save_params = {"quality": 90}
@@ -571,9 +745,9 @@ async def watermark_image(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to watermark image: {e}",
         )
-    
 
-@app.get("/test",response_class=HTMLResponse)
+
+@app.get("/test", response_class=HTMLResponse)
 async def test_endpoint():
     """
     A simple test endpoint to verify the API is running.
@@ -1020,6 +1194,7 @@ async def test_endpoint():
 </body>
 </html>
 """
+
 
 # Instructions on how to run this application:
 # 1. Save the code above as `main.py`.
