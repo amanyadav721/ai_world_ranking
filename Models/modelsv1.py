@@ -27,3 +27,42 @@ class UploadResponse(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+
+class LoanRepayment(BaseModel):
+    type: str
+    amount: float
+
+class FinancialAnalysisRequest(BaseModel):
+    user_profile: dict
+    income: dict
+    expenses: dict
+    savings_and_investments: dict
+    debts: dict
+    goals: dict
+    problems_or_stuck: list
+
+class MonthlyCashflow(BaseModel):
+    total_income: float
+    total_expenses: float
+    available_to_invest_or_save: float
+
+class AnalysisSection(BaseModel):
+    savings_rate: str
+    emergency_fund_status: str
+    debt_to_income_ratio: str
+    investment_diversification: str
+    loan_burden: str
+
+class ProblemResolution(BaseModel):
+    user_problem: str
+    response: str
+
+class FinancialAnalysisResponse(BaseModel):
+    status: str
+    financial_health_score: int
+    rating: str
+    monthly_cashflow: MonthlyCashflow
+    analysis: AnalysisSection
+    recommendations: list
+    problem_resolution: list
+    ai_in_depth_analysis: str = None

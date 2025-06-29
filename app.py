@@ -33,7 +33,8 @@ from ai.QuestionBuilder.questionBuilder import (questionAnalyser,
                                                 questionBuilderv1)
 from ai.summary import resume_analysis
 from Models.modelsv1 import (ChatRequest, ChatResponse, QuestionData,
-                             UploadResponse)
+                             UploadResponse, FinancialAnalysisRequest, FinancialAnalysisResponse)
+from ai.financial_analysis import analyze_financial_data
 
 app = FastAPI()
 
@@ -1208,3 +1209,11 @@ async def test_endpoint():
 # 3. Install the dependencies: `pip install -r requirements.txt`
 # 4. Run the FastAPI application: `uvicorn main:app --reload`
 # 5. Access the API documentation at `http://127.0.0.1:8000/docs` in your browser.
+
+@app.post("/ai/financial-analysis", response_model=FinancialAnalysisResponse)
+def financial_analysis_endpoint(data: FinancialAnalysisRequest):
+    try:
+        result = analyze_financial_data(data.dict())
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Financial analysis failed: {str(e)}")
